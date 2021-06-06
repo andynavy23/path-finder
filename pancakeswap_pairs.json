@@ -720,6 +720,24 @@
     "reserve1": 0
 },
 {
+    "index": 40,
+    "address": "0x6273624e84a95818af725007e1ca1c0f0c6c7190",
+    "token0":
+    {
+        "address": "0x051ea4862f8665b4677092e92c82450620837121",
+        "symbol": "TFT",
+        "decimal": 18
+    },
+    "token1":
+    {
+        "address": "0xe9e7cea3dedca5984780bafc599bd69add087d56",
+        "symbol": "BUSD",
+        "decimal": 18
+    },
+    "reserve0": 0,
+    "reserve1": 0
+},
+{
     "index": 41,
     "address": "0x3d63b28ea380d6948b4a8d65e30cb4ece478abba",
     "token0":
@@ -1476,6 +1494,24 @@
     "reserve1": 0
 },
 {
+    "index": 83,
+    "address": "0xdbc815fa14750a2bc84d086b1ffac9dbb05a08d4",
+    "token0":
+    {
+        "address": "0x051ea4862f8665b4677092e92c82450620837121",
+        "symbol": "TFT",
+        "decimal": 18
+    },
+    "token1":
+    {
+        "address": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+        "symbol": "WBNB",
+        "decimal": 18
+    },
+    "reserve0": 0,
+    "reserve1": 0
+},
+{
     "index": 84,
     "address": "0x80feccb8fe363c7b1a8a455af946f81d0275bb9e",
     "token0":
@@ -1758,6 +1794,42 @@
     {
         "address": "0xed28a457a5a76596ac48d87c0f577020f6ea1c4c",
         "symbol": "pBTC",
+        "decimal": 18
+    },
+    "reserve0": 0,
+    "reserve1": 0
+},
+{
+    "index": 100,
+    "address": "0xe9c53b5ab0c9cdbd72a03151a628863c28c55a6a",
+    "token0":
+    {
+        "address": "0x57067a6bd75c0e95a6a5f158455926e43e79beb0",
+        "symbol": "BLZD",
+        "decimal": 18
+    },
+    "token1":
+    {
+        "address": "0xe9e7cea3dedca5984780bafc599bd69add087d56",
+        "symbol": "BUSD",
+        "decimal": 18
+    },
+    "reserve0": 0,
+    "reserve1": 0
+},
+{
+    "index": 101,
+    "address": "0x27a5a5c1ff96447f2a0c4badcf26e7c65c040e3c",
+    "token0":
+    {
+        "address": "0x57067a6bd75c0e95a6a5f158455926e43e79beb0",
+        "symbol": "BLZD",
+        "decimal": 18
+    },
+    "token1":
+    {
+        "address": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+        "symbol": "WBNB",
         "decimal": 18
     },
     "reserve0": 0,
@@ -2479,6 +2551,24 @@
         "address": "0xc2c23a86def9e9f5972a633b3d25f7ecbfa5e575",
         "symbol": "LAYER",
         "decimal": 18
+    },
+    "reserve0": 0,
+    "reserve1": 0
+},
+{
+    "index": 142,
+    "address": "0xf4eb56a0abaea2354542b17ecc9816e3117d69b4",
+    "token0":
+    {
+        "address": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+        "symbol": "WBNB",
+        "decimal": 18
+    },
+    "token1":
+    {
+        "address": "0xdbe4cc36d0c19858d8cc7c5030593e9922ac680d",
+        "symbol": "DEFY",
+        "decimal": 8
     },
     "reserve0": 0,
     "reserve1": 0
