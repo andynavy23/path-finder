@@ -6,11 +6,10 @@ from decimal import Decimal
 from web3 import HTTPProvider
 from web3._utils.request import make_post_request
 from eth_abi import decode_abi
-import pickle
 
 
 tokenIn = {
-    'address': '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c',
+    'address': '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
     'symbol': 'WBNB',
     'decimal': 18,
 }
