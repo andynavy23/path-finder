@@ -1,3 +1,5 @@
+import sys
+sys.path.append('/home/ubuntu/uniswap-arbitrage-analysis')
 import time
 import threading
 import json
@@ -6,28 +8,43 @@ from decimal import Decimal
 from web3 import HTTPProvider
 from web3._utils.request import make_post_request
 from eth_abi import decode_abi
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
+# Provider
+bsc_url = 'https://bsc-dataseed.binance.org/'
+
+# Start token
 tokenIn = {
     'address': '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
     'symbol': 'WBNB',
     'decimal': 18,
 }
+
+# About find path setting
+maxHops = 6
+num_trades = 1
+allow_slippage_percent = Decimal('0.005')
 tokenOut = tokenIn
 startToken = tokenIn
 currentPairs = []
 path = [tokenIn]
 bestTrades = []
-maxHops = 6
-
-bsc_url = 'https://bsc-dataseed.binance.org/'
 w3 = Web3(HTTPProvider(bsc_url, request_kwargs={'timeout': 6000}))
 
-pancakeswap_abi_path = './PancakeSwapPair.json'
+# About DEX exchange setting
+pancakeswap_abi_path = './abi/PancakeSwapPair_V2.json'
 pairABI = json.load(open(pancakeswap_abi_path))
+pancakeswap_pairs_path = './pancakeswap_pairs_V2.json'
+pancakeswap_blacklist_path = './pancakeswap_blacklist_V2.json'
 
-pancakeswap_pairs_path = './pancakeswap_pairs.json'
-
+# About transaction fees calculation
 d998 = Decimal(998)
 d1000 = Decimal(1000)
 
@@ -70,19 +87,21 @@ class BatchHTTPProvider(HTTPProvider):
 batch_provider = BatchHTTPProvider(bsc_url, request_kwargs={'timeout': 6000})
 
 
-def toDict(pairs):
-    p = {}
-    i = 0
-    for pair in pairs:
-        p[pair['address']] = pair
-        p[pair['address']]['arrIndex'] = i
-        i += 1
-    return p
+def removeBlackList(pairs):
+    blacklist = json.load(open(pancakeswap_blacklist_path))
+    r = []
+    for i in range(len(pairs)):
+        if pairs[i]['token0']['address'] in blacklist or pairs[i]['token1']['address'] in blacklist:
+            r.append(i)
+    r.reverse()
+    for t in r:
+        del pairs[t]
+    return pairs
 
 
 def selectPairs(all_pairs):
-    pairsDict = toDict(all_pairs)
-    return all_pairs, pairsDict
+    all_pairs = removeBlackList(all_pairs)
+    return all_pairs
 
 
 def rpc_response_to_result(response):
@@ -140,13 +159,13 @@ def get_reserves(pairs, blockNumber='latest'):
 
 
 def get_reserves_batch_mt(pairs):
-    if len(pairs) <= 100:
+    if len(pairs) <= 200:
         new_pairs = get_reserves(pairs)
     else:
         s = 0
         threads = []
         while s < len(pairs):
-            e = s + 100
+            e = s + 200
             if e > len(pairs):
                 e = len(pairs)
             t = MyThread(func=get_reserves, args=(pairs[s:e],))
@@ -184,11 +203,6 @@ def getAmountOut(amountIn, reserveIn, reserveOut):
 
 
 def getEaEb(tokenIn, pairs):
-    def adjustReserve(token, amount):
-        # res = Decimal(amount)*Decimal(pow(10, 18-token['decimal']))
-        # return Decimal(int(res))
-        return amount
-
     def toInt(n):
         return Decimal(int(n))
 
@@ -203,14 +217,14 @@ def getEaEb(tokenIn, pairs):
             else:
                 tokenOut = pair['token0']
         if idx == 1:
-            Ra = adjustReserve(pairs[0]['token0'], pairs[0]['reserve0'])
-            Rb = adjustReserve(pairs[0]['token1'], pairs[0]['reserve1'])
+            Ra = pairs[0]['reserve0']
+            Rb = pairs[0]['reserve1']
             if tokenIn['address'] == pairs[0]['token1']['address']:
                 temp = Ra
                 Ra = Rb
                 Rb = temp
-            Rb1 = adjustReserve(pair['token0'], pair['reserve0'])
-            Rc = adjustReserve(pair['token1'], pair['reserve1'])
+            Rb1 = pair['reserve0']
+            Rc = pair['reserve1']
             if tokenOut['address'] == pair['token1']['address']:
                 temp = Rb1
                 Rb1 = Rc
@@ -223,8 +237,8 @@ def getEaEb(tokenIn, pairs):
         if idx > 1:
             Ra = Ea
             Rb = Eb
-            Rb1 = adjustReserve(pair['token0'], pair['reserve0'])
-            Rc = adjustReserve(pair['token1'], pair['reserve1'])
+            Rb1 = pair['reserve0']
+            Rc = pair['reserve1']
             if tokenOut['address'] == pair['token1']['address']:
                 temp = Rb1
                 Rb1 = Rc
@@ -257,7 +271,7 @@ def findArb(pairs, tokenIn, tokenOut, maxHops, currentPairs, path, bestTrades, c
         newPath.append(tempOut)
         if tempOut['address'] == tokenOut['address'] and len(path) > 2:
             Ea, Eb = getEaEb(tokenOut, currentPairs + [pair])
-            newTrade = { 'route': currentPairs + [pair], 'path': newPath, 'Ea': Ea, 'Eb': Eb }
+            newTrade = {'route': currentPairs + [pair], 'path': newPath, 'Ea': Ea, 'Eb': Eb}
             if Ea and Eb and Ea < Eb:
                 newTrade['optimalAmount'] = getOptimalAmount(Ea, Eb)
                 if newTrade['optimalAmount'] > 0:
@@ -276,61 +290,136 @@ def findArb(pairs, tokenIn, tokenOut, maxHops, currentPairs, path, bestTrades, c
 
 
 def get_gas_fees():
-    gas_limit = 70000
-    gas_price = 10
+    gas_limit = 600000
+    gas_price = 5
     gas_fees = gas_price * gas_limit * Decimal('0.000000001')
     return gas_fees
 
 
-def show_message(trades):
+def get_output_amount(data, input_amount, slippage_percent=Decimal('1')):
+    # print(data)
+    path = [i['symbol'] for i in data['path']]
+
+    pairs_info = []
+    for index, item in enumerate(data['route']):
+        if index == len(data['route']):
+            continue
+        token_f = path[index]
+        token_b = path[index + 1]
+        reserve_f = item['reserve0'] if item['token0']['symbol'] == token_f else item['reserve1']
+        decimal_f = item['token0']['decimal'] if item['token0']['symbol'] == token_f else item['token1']['decimal']
+        reserve_b = item['reserve1'] if item['token1']['symbol'] == token_b else item['reserve0']
+        decimal_b = item['token1']['decimal'] if item['token1']['symbol'] == token_b else item['token0']['decimal']
+
+        pairs_info.append({
+            'pair_name': f"{token_f}/{token_b}",
+            'token_f': token_f,
+            'token_b': token_b,
+            'reserve_f': reserve_f,
+            'reserve_b': reserve_b,
+            'decimal_f': decimal_f,
+            'decimal_b': decimal_b,
+        })
+
+    # capital = input_amount / pow(10, data['path'][0]['decimal'])
+    capital_reserve = input_amount
+    for pair in pairs_info:
+        update_capital_reserve = getAmountOut(capital_reserve, pair['reserve_f'], pair['reserve_b'])
+        # update_capital = update_capital_reserve / pow(10, pair['decimal_b'])
+        # print(f"Buy {pair['pair_name']} with {capital} {pair['token_f']}")
+        # print(f"Get {update_capital} {pair['token_b']} back")
+        # capital = update_capital
+        capital_reserve = update_capital_reserve
+
+    return capital_reserve - (capital_reserve * slippage_percent)
+
+
+def send_message(trades, num_trades: int = 1, test_mode: bool = False):
     gasFees = get_gas_fees()
-    print('')
-    text = ''
+    texts = []
+    update_trades = []
     for data in trades:
-        print(data)
-        input_amount = data['optimalAmount'] / pow(10, data['path'][0]['decimal'])
+        text = ''
+        # print(data)
+        input_amount = data['optimalAmount']
+        output_amount = data['outputAmount']
+        output_slippage_amount = get_output_amount(data, input_amount, allow_slippage_percent)
+        input_amount = input_amount / pow(10, data['path'][0]['decimal'])
+        output_amount = output_amount / pow(10, data['path'][0]['decimal'])
+        output_slippage_amount = output_slippage_amount / pow(10, data['path'][0]['decimal'])
         symbols = [i['symbol'] for i in data['path']]
-        output_amount = data['outputAmount'] / pow(10, data['path'][0]['decimal'])
-        profit = data['profit'] / pow(10, data['path'][0]['decimal'])
+
+        profit = (output_amount - input_amount)
+        profit_slippage = (output_slippage_amount - input_amount)
         pnl = profit - gasFees
+        pnl_slippage = profit_slippage - gasFees
+
         usdt_input_amount = input_amount * Decimal('326.67')
         usdt_output_amount = output_amount * Decimal('326.67')
-        usdt_pnl = pnl * Decimal('326.67')
+        usdt_output_slippage_amount = output_slippage_amount * Decimal('326.67')
         usdt_profit = profit * Decimal('326.67')
+        usdt_profit_slippage = profit_slippage * Decimal('326.67')
+        usdt_pnl = pnl * Decimal('326.67')
+        usdt_pnl_slippage = pnl_slippage * Decimal('326.67')
 
-        if profit >= 0:
+        logger.info(f"Path: {' >> '.join([i['symbol'] for i in data['path']])}")
+        logger.info(f"Input amount: {round(input_amount, 4)} WBNB({round(usdt_input_amount, 4)} USDT)")
+        logger.info(f"Output amount: {round(output_amount, 4)} WBNB({round(usdt_output_amount, 4)} USDT)")
+        logger.info(f"Output amount(calculate with {round(allow_slippage_percent * Decimal('100'), 1)}% slippage): {round(output_slippage_amount, 4)} WBNB({round(usdt_output_slippage_amount, 4)} USDT)")
+        logger.info(f"Profit: {round(profit, 4)} WBNB({round(usdt_profit, 4)} USDT)")
+        logger.info(f"Profit(calculate with {round(allow_slippage_percent * Decimal('100'), 1)}% slippage): {round(profit_slippage, 4)} WBNB({round(usdt_profit_slippage, 4)} USDT)")
+        logger.info(f"Pnl: {round(pnl, 4)} WBNB({round(usdt_pnl, 4)} USDT)")
+        logger.info(f"Pnl(calculate with {round(allow_slippage_percent * Decimal('100'), 1)}% slippage): {round(pnl_slippage, 4)} WBNB({round(usdt_pnl_slippage, 4)} USDT)")
+        logger.info(f"Trade condition: {round(input_amount * Decimal('0.001'), 4)} WBNB({round(usdt_input_amount * Decimal('0.001'), 4)} USDT)")
+
+        if pnl_slippage > 0:
             text += f"Input amount: {round(input_amount, 4)} WBNB ({round(usdt_input_amount, 4)} USDT)\n"
             text += 'Path: ' + ' >> '.join(symbols) + '\n'
             text += f"Output amount: {round(output_amount, 4)} WBNB ({round(usdt_output_amount, 4)} USDT)\n"
-            text += f"Profit(include transaction fee): {round(profit, 4)} WBNB ({round(usdt_profit, 4)} USDT)\n"
-            text += f"Pnl: {round(pnl, 4)} WBNB ({round(usdt_pnl, 4)} USDT)\n\n"
+            text += f"Output amount(calculate with {round(allow_slippage_percent * Decimal('100'), 1)}% slippage): {round(output_slippage_amount, 4)} WBNB ({round(usdt_output_slippage_amount, 4)} USDT)\n"
+            text += f"Profit: {round(profit, 4)} WBNB ({round(usdt_profit, 4)} USDT)\n"
+            text += f"Profit(calculate with {round(allow_slippage_percent * Decimal('100'), 1)}% slippage): {round(profit_slippage, 4)} WBNB ({round(usdt_profit_slippage, 4)} USDT)\n"
+            text += f"Pnl: {round(pnl, 4)} WBNB ({round(usdt_pnl, 4)} USDT)\n"
+            text += f"Pnl(calculate with {round(allow_slippage_percent * Decimal('100'), 1)}% slippage): {round(pnl_slippage, 4)} WBNB ({round(usdt_pnl_slippage, 4)} USDT)\n\n"
+            texts.append(text)
+            update_trades.append(data)
 
-    if text != '':
-        print(text)
+        if len(update_trades) >= num_trades:
+            break
+
+    if not test_mode and texts:
+        for text in texts:
+            print(f"<b>[BSC - PancakeSwap]</b>\n{text}")
+
+    return update_trades
 
 
 def main():
     start = time.time()
     all_pairs = json.load(open(pancakeswap_pairs_path))
-    pairs, pairsDict = selectPairs(all_pairs)
-    print('pairs:', len(pairs))
+    pairs = selectPairs(all_pairs)
+    print(f"pairs: {len(pairs)}")
 
     try:
         pairs = get_reserves_batch_mt(pairs)
     except Exception as e:
-        print('get_reserves err:', e)
+        logger.critical('get_reserves err:', e)
         return
     end = time.time()
-    print('update cost:', end - start, 's')
+    print(f"update cost: {end - start} s")
 
     trades = findArb(pairs, tokenIn, tokenOut, maxHops, currentPairs, path, bestTrades)
     if len(trades) == 0:
-        print('No trades.')
+        logger.info('No trades.')
         return
 
-    show_message(trades)
-    exit()
+    trades = send_message(trades, num_trades, False)
+    if len(trades) == 0:
+        logger.info('No trades can be profitable.')
+        return
 
 
 if __name__ == "__main__":
+    logger.info("START")
     main()
+    logger.info("END")
